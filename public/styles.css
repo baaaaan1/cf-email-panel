@@ -1,0 +1,4 @@
+body { background: #f4f6fb; }
+.page { margin-top: 2rem; }
+.badge { background: #e3f2fd; padding: .2rem .6rem; border-radius: 999px; font-weight: 600; }
+.health-box { background: #fff; padding: .5rem; border-radius: 6px; margin-top: .5rem; font-family: monospace; max-height:120px; overflow:auto }

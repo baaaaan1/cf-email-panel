@@ -1,67 +1,287 @@
-// main.js - front-end interactions for Cloudflare Email Panel SPA
+// main.js - Modern UI interactions for Cloudflare Email Panel
+// Default configuration
+const defaultConfig = {
+  panel_title: 'Cloudflare Email Panel',
+  welcome_message: 'Manage your email routing settings'
+};
+
+// Simple fetch helper
 async function api(path, opts) {
-  const res = await fetch(path, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(txt || res.statusText);
-  }
+  const res = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
+  if (!res.ok) throw new Error((await res.text()) || res.statusText);
   return res.json();
 }
 
-async function refreshAll() {
-  try {
-    const h = await api('/health');
-    document.getElementById('live-destinations').textContent = h.destinations;
-    document.getElementById('live-rules').textContent = h.rules;
-    document.getElementById('healthResult').textContent = JSON.stringify(h, null, 2);
+// Theme management
+function toggleTheme() {
+  const body = document.body;
+  const themeIcon = document.getElementById('theme-icon');
+  const themeText = document.getElementById('theme-text');
+  body.classList.toggle('dark-mode');
+  const isDark = body.classList.contains('dark-mode');
+  themeIcon.textContent = isDark ? 'light_mode' : 'dark_mode';
+  themeText.textContent = isDark ? 'Light Mode' : 'Dark Mode';
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+}
 
-    const dests = await api('/api/destinations');
-    renderDestinations(dests);
-    const rules = await api('/api/rules');
-    renderRules(rules);
-  } catch (e) {
-    M.toast({html: 'Refresh failed: ' + e.message, classes: 'red darken-1'});
+function loadTheme() {
+  const savedTheme = localStorage.getItem('theme');
+  if (savedTheme === 'dark') {
+    document.body.classList.add('dark-mode');
+    document.getElementById('theme-icon').textContent = 'light_mode';
+    document.getElementById('theme-text').textContent = 'Light Mode';
   }
 }
 
-function renderDestinations(dests) {
-  const tb = document.getElementById('dest-table'); tb.innerHTML='';
-  dests.forEach(d => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${escapeHtml(d.email)}</td><td><code>${escapeHtml(d.id)}</code></td><td>${d.verified?'<span class="green-text">verified</span>':'<span class="orange-text">pending</span>'}</td><td><a class="waves-effect waves-light btn red" data-id="${escapeHtml(d.id)}">Delete</a></td>`;
-    tb.appendChild(tr);
-  });
-  tb.querySelectorAll('a[data-id]').forEach(btn => btn.addEventListener('click', async (ev)=>{
-    const id = ev.currentTarget.getAttribute('data-id');
-    if (!confirm('Delete destination?')) return;
-    try { await api('/api/destinations/'+encodeURIComponent(id), {method:'DELETE'}); M.toast({html:'Deleted', classes:'green'}); refreshAll(); } catch(e){ M.toast({html:'Delete failed: '+e.message, classes:'red'}); }
-  }));
+// Rule management state
+let editingRuleElement = null;
+let editingRuleId = null;
+
+function showAddRuleDialog() {
+  editingRuleElement = null;
+  editingRuleId = null;
+  document.getElementById('modalTitle').textContent = 'Add New Rule';
+  document.getElementById('saveBtn').innerHTML = '<span class="material-icons">save</span> Save Rule';
+  clearRuleForm();
+  document.getElementById('ruleModal').classList.add('active');
 }
 
-function renderRules(rules) {
-  const tb = document.getElementById('rules-table'); tb.innerHTML='';
-  rules.forEach(r => {
-    const alias = (r.matchers && r.matchers[0] && r.matchers[0].value) || '';
-    const dest = (r.actions && r.actions[0] && r.actions[0].value) || '';
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td><code>${escapeHtml(r.id)}</code></td><td>${escapeHtml(alias)}</td><td>${Array.isArray(dest)?escapeHtml(dest.join(', ')):escapeHtml(dest)}</td><td>${r.enabled?'<i class="material-icons green-text">check_circle</i>':'<i class="material-icons red-text">cancel</i>'}</td><td><a class="waves-effect waves-light btn red" data-id="${escapeHtml(r.id)}">Delete</a></td>`;
-    tb.appendChild(tr);
-  });
-  tb.querySelectorAll('a[data-id]').forEach(btn => btn.addEventListener('click', async (ev)=>{
-    const id = ev.currentTarget.getAttribute('data-id');
-    if (!confirm('Delete rule?')) return;
-    try { await api('/api/rules/'+encodeURIComponent(id), {method:'DELETE'}); M.toast({html:'Rule deleted', classes:'green'}); refreshAll(); } catch(e){ M.toast({html:'Delete failed: '+e.message, classes:'red'}); }
-  }));
+function populateEditRule(ruleElement) {
+  editingRuleElement = ruleElement;
+  editingRuleId = ruleElement.getAttribute('data-id');
+  const fromEmail = ruleElement.querySelector('.rule-from').textContent.trim();
+  const toEmail = ruleElement.querySelector('.rule-to').textContent.replace('→ ', '').trim();
+  document.getElementById('modalTitle').textContent = 'Edit Rule';
+  document.getElementById('saveBtn').innerHTML = '<span class="material-icons">save</span> Update Rule';
+  document.getElementById('fromEmail').value = fromEmail;
+  document.getElementById('toEmail').value = toEmail;
+  document.getElementById('ruleModal').classList.add('active');
 }
 
-function escapeHtml(s){ return String(s||'').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"})[c]); }
+function closeRuleModal() {
+  document.getElementById('ruleModal').classList.remove('active');
+  editingRuleElement = null;
+  editingRuleId = null;
+}
 
-document.addEventListener('DOMContentLoaded', ()=>{
-  document.getElementById('btn-health').addEventListener('click', ()=>refreshAll());
-  document.getElementById('btn-refresh').addEventListener('click', ()=>refreshAll());
-  document.getElementById('add-dest').addEventListener('click', async ()=>{
-    const email = document.getElementById('dest-email').value.trim(); if(!email){ M.toast({html:'Email required', classes:'orange'}); return; }
-    try{ await api('/api/destinations', {method:'POST', body: JSON.stringify({email})}); M.toast({html:'Destination created', classes:'green'}); document.getElementById('dest-email').value=''; refreshAll(); }catch(e){ M.toast({html:'Create failed: '+e.message, classes:'red'}); }
-  });
-  refreshAll();
+function clearRuleForm() {
+  document.getElementById('ruleForm').reset();
+  document.getElementById('priority').value = '5';
+}
+
+async function saveRule(event) {
+  event.preventDefault();
+  const fromEmail = document.getElementById('fromEmail').value.trim();
+  const toEmail = document.getElementById('toEmail').value.trim();
+  const ruleType = document.getElementById('ruleType').value;
+  if (ruleType !== 'forward') { showNotification('Only Forward is supported for now', 'error'); return; }
+  try {
+    if (editingRuleId) {
+      await api('/api/rules/' + encodeURIComponent(editingRuleId), { method: 'PUT', body: JSON.stringify({ customEmail: fromEmail, destinationId: toEmail }) });
+      showNotification('Rule updated successfully!', 'success');
+    } else {
+      await api('/api/rules', { method: 'POST', body: JSON.stringify({ customEmail: fromEmail, destinationIdManual: toEmail }) });
+      showNotification('Rule created successfully!', 'success');
+    }
+    closeRuleModal();
+    await loadRules();
+  } catch (e) { showNotification('Save failed: ' + e.message, 'error'); }
+}
+
+function createRuleElement(rule) {
+  const alias = (rule.matchers && rule.matchers[0] && rule.matchers[0].value) || '';
+  const action = rule.actions && rule.actions[0] || {};
+  const to = Array.isArray(action.value) ? action.value.join(', ') : (action.value || (action.type === 'drop' ? '/dev/null' : ''));
+  const isActive = !!rule.enabled;
+  const div = document.createElement('div');
+  div.className = 'email-rule';
+  div.setAttribute('data-id', rule.id);
+  div.innerHTML = `
+    <div class="rule-info">
+      <div class="rule-from">${alias}</div>
+      <div class="rule-to">→ ${to}</div>
+    </div>
+    <div class="rule-actions">
+      <div class="rule-status ${isActive ? 'active' : 'inactive'}">${isActive ? 'Active' : 'Inactive'}</div>
+      <button class="rule-action-btn" data-action="toggle" title="Toggle Status">
+        <span class="material-icons">${isActive ? 'power_settings_new' : 'power_off'}</span>
+      </button>
+      <button class="rule-action-btn" data-action="edit" title="Edit Rule">
+        <span class="material-icons">edit_note</span>
+      </button>
+      <button class="rule-action-btn" data-action="delete" title="Delete Rule">
+        <span class="material-icons">delete_outline</span>
+      </button>
+    </div>`;
+  return div;
+}
+
+async function loadRules() {
+  try {
+    const rules = await api('/api/rules');
+    const container = document.getElementById('rules-container');
+    container.innerHTML = '';
+    rules.forEach(r => container.appendChild(createRuleElement(r)));
+    updateStatsFromRules(rules);
+  } catch (e) { showNotification('Load rules failed: ' + e.message, 'error'); }
+}
+
+function updateStatsFromRules(rules) {
+  const total = rules.length;
+  const active = rules.filter(r => r.enabled).length;
+  document.getElementById('stat-total-rules').textContent = total;
+  document.getElementById('stat-active-rules').textContent = active;
+}
+
+async function handleToggle(ruleElement, button) {
+  const id = ruleElement.getAttribute('data-id');
+  const statusElement = ruleElement.querySelector('.rule-status');
+  const iconElement = button.querySelector('.material-icons');
+  const willEnable = statusElement.classList.contains('inactive');
+  try {
+    await api('/api/rules/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify({ enabled: willEnable }) });
+    statusElement.classList.toggle('active', willEnable);
+    statusElement.classList.toggle('inactive', !willEnable);
+    statusElement.textContent = willEnable ? 'Active' : 'Inactive';
+    iconElement.textContent = willEnable ? 'power_settings_new' : 'power_off';
+    const rules = Array.from(document.querySelectorAll('.email-rule')).map(el => ({ enabled: el.querySelector('.rule-status').classList.contains('active') }));
+    updateStatsFromRules(rules);
+    showNotification(willEnable ? 'Rule activated' : 'Rule deactivated', 'success');
+  } catch (e) { showNotification('Toggle failed: ' + e.message, 'error'); }
+}
+
+async function handleDelete(ruleElement, button) {
+  const id = ruleElement.getAttribute('data-id');
+  const original = button.innerHTML;
+  button.innerHTML = '<span class="material-icons">hourglass_empty</span>';
+  button.disabled = true;
+  try {
+    await api('/api/rules/' + encodeURIComponent(id), { method: 'DELETE' });
+    ruleElement.remove();
+    const rules = Array.from(document.querySelectorAll('.email-rule')).map(el => ({ enabled: el.querySelector('.rule-status').classList.contains('active') }));
+    updateStatsFromRules(rules);
+    showNotification('Rule deleted', 'success');
+  } catch (e) {
+    showNotification('Delete failed: ' + e.message, 'error');
+    button.innerHTML = original;
+    button.disabled = false;
+  }
+}
+
+// API Status Check (uses /health when available)
+async function checkApiStatus(buttonEl) {
+  const button = buttonEl;
+  const originalContent = button.innerHTML;
+  button.innerHTML = '<span class="material-icons">hourglass_empty</span> Checking...';
+  button.disabled = true;
+  try {
+    const h = await api('/health');
+    const overallStatus = h.ok ? 'success' : 'error';
+    updateApiStatus(overallStatus);
+    showNotification('API status updated', h.ok ? 'success' : 'error');
+  } catch (e) {
+    updateApiStatus('error');
+    showNotification('Health failed: ' + e.message, 'error');
+  } finally {
+    button.innerHTML = originalContent;
+    button.disabled = false;
+  }
+}
+
+function updateApiStatus(overallStatus = 'success') {
+  const container = document.getElementById('api-status');
+  const now = new Date();
+  const timeString = now.toLocaleTimeString();
+  const cfApi = container.children[0];
+  const cfIcon = cfApi.querySelector('.api-status-icon');
+  const cfDesc = cfApi.querySelector('.api-status-desc');
+  const cfBadge = cfApi.querySelector('.api-status-badge');
+  if (overallStatus === 'error') {
+    cfIcon.className = 'api-status-icon error';
+    cfIcon.innerHTML = '<span class="material-icons">cloud_off</span>';
+    cfDesc.textContent = `Connection failed • Last checked: ${timeString}`;
+    cfBadge.className = 'api-status-badge error';
+    cfBadge.textContent = 'Offline';
+  } else {
+    cfIcon.className = 'api-status-icon success';
+    cfIcon.innerHTML = '<span class="material-icons">cloud_done</span>';
+    cfDesc.textContent = `Connected • Last checked: ${timeString}`;
+    cfBadge.className = 'api-status-badge success';
+    cfBadge.textContent = 'Online';
+  }
+}
+
+function showNotification(message, type = 'success') {
+  const notification = document.createElement('div');
+  notification.className = `notification ${type}`;
+  notification.innerHTML = `
+    <span class="material-icons">${type === 'success' ? 'check_circle' : 'error'}</span>
+    ${message}
+  `;
+  document.body.appendChild(notification);
+  setTimeout(() => {
+    notification.style.opacity = '0';
+    notification.style.transform = 'translateX(100%)';
+    setTimeout(() => notification.remove(), 300);
+  }, 3000);
+}
+
+// Element SDK configuration (optional)
+async function onConfigChange(config) {
+  const panelTitle = config.panel_title || defaultConfig.panel_title;
+  const welcomeMessage = config.welcome_message || defaultConfig.welcome_message;
+  document.getElementById('panel-title').textContent = panelTitle;
+  document.getElementById('welcome-message').textContent = welcomeMessage;
+}
+function mapToCapabilities(_config) { return { recolorables: [], borderables: [], fontEditable: undefined, fontSizeable: undefined }; }
+function mapToEditPanelValues(config) { return new Map([["panel_title", config.panel_title || defaultConfig.panel_title],["welcome_message", config.welcome_message || defaultConfig.welcome_message]]); }
+
+// Wire up events after DOM is ready
+document.addEventListener('DOMContentLoaded', function () {
+  // Theme
+  loadTheme();
+  const themeBtn = document.getElementById('btn-theme-toggle');
+  if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
+
+  // Element SDK
+  if (window.elementSdk) {
+    window.elementSdk.init({ defaultConfig, onConfigChange, mapToCapabilities, mapToEditPanelValues });
+  }
+
+  // API Status check button
+  const checkBtn = document.getElementById('btn-check-status');
+  if (checkBtn) checkBtn.addEventListener('click', (e) => checkApiStatus(e.currentTarget));
+
+  // Open modal buttons
+  const addRuleBtn = document.getElementById('btn-add-rule');
+  const addFabBtn = document.getElementById('btn-fab-add');
+  if (addRuleBtn) addRuleBtn.addEventListener('click', showAddRuleDialog);
+  if (addFabBtn) addFabBtn.addEventListener('click', showAddRuleDialog);
+
+  // Close modal buttons
+  const closeBtn = document.getElementById('btn-modal-close');
+  const cancelBtn = document.getElementById('btn-cancel');
+  if (closeBtn) closeBtn.addEventListener('click', closeRuleModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeRuleModal);
+
+  // Form submit
+  const ruleForm = document.getElementById('ruleForm');
+  if (ruleForm) ruleForm.addEventListener('submit', saveRule);
+
+  // Delegate rule actions
+  const rulesContainer = document.getElementById('rules-container');
+  if (rulesContainer) {
+    rulesContainer.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button.rule-action-btn');
+      if (!btn) return;
+      const ruleElement = btn.closest('.email-rule');
+      const action = btn.getAttribute('data-action');
+      if (action === 'toggle') return handleToggle(ruleElement, btn);
+      if (action === 'edit') return populateEditRule(ruleElement);
+      if (action === 'delete') return handleDelete(ruleElement, btn);
+    });
+  }
+
+  // Initial data
+  loadRules();
 });

@@ -1,79 +1,168 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Cloudflare Email Panel</title>
-    <!-- Materialize CSS -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css" rel="stylesheet">
-    <link href="/styles.css" rel="stylesheet">
-  </head>
-  <body>
-    <nav class="blue darken-2">
-      <div class="nav-wrapper container">
-        <a href="#" class="brand-logo">Cloudflare Email Panel</a>
-        <ul id="nav-mobile" class="right hide-on-med-and-down">
-          <li><a id="btn-health" class="waves-effect waves-light btn grey darken-3"><i class="material-icons left">health_and_safety</i>Check health</a></li>
-        </ul>
-      </div>
-    </nav>
-
-    <main class="container page">
-      <div class="row">
-        <div class="col s12 m4">
-          <div class="card">
-            <div class="card-content">
-              <span class="card-title">Live status</span>
-              <p>Destinations: <span id="live-destinations" class="badge">-</span></p>
-              <p>Rules: <span id="live-rules" class="badge">-</span></p>
-              <div id="healthResult" class="health-box"></div>
-            </div>
-            <div class="card-action">
-              <a id="btn-refresh" class="waves-effect waves-light btn">Refresh</a>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-content">
-              <span class="card-title">Add destination</span>
-              <div class="input-field">
-                <input id="dest-email" type="text">
-                <label for="dest-email">Email address</label>
-              </div>
-              <a id="add-dest" class="waves-effect waves-light btn">Add</a>
-            </div>
-          </div>
-        </div>
-
-        <div class="col s12 m8">
-          <div class="card">
-            <div class="card-content">
-              <span class="card-title">Destinations</span>
-              <table class="striped">
-                <thead><tr><th>Email</th><th>ID</th><th>Status</th><th></th></tr></thead>
-                <tbody id="dest-table"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-content">
-              <span class="card-title">Rules</span>
-              <table class="striped">
-                <thead><tr><th>ID</th><th>Alias</th><th>Destination</th><th>Enabled</th><th></th></tr></thead>
-                <tbody id="rules-table"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    </main>
-
-    <footer class="page-footer grey lighten-4">
-      <div class="container grey-text text-darken-2">Built with Materialize • Cloudflare Email Routing</div>
-    </footer>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
-    <script src="/main.js"></script>
-  </body>
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cloudflare Email Panel</title>
+  <script src="/_sdk/element_sdk.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&amp;display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link href="/styles.css" rel="stylesheet">
+  <script src="/_sdk/data_sdk.js" type="text/javascript"></script>
+  <script src="https://cdn.tailwindcss.com" type="text/javascript"></script>
+ </head>
+ <body>
+  <div class="app-container">
+   <header class="header">
+  <div class="header-left">
+   <div class="logo"><span class="material-icons">email</span>
+   </div>
+   <div>
+    <div class="header-title" id="panel-title">
+     Cloudflare Email Panel
+    </div>
+    <div class="header-subtitle" id="welcome-message">
+     Manage your email routing settings
+    </div>
+   </div>
+  </div><button class="theme-toggle" id="btn-theme-toggle"> <span class="material-icons" id="theme-icon">dark_mode</span> <span id="theme-text">Dark Mode</span> </button>
+   </header>
+   <main class="main-content">
+  <div class="stats-grid">
+   <div class="stat-card">
+    <div class="stat-header">
+     <div class="stat-icon primary"><span class="material-icons">rule</span>
+     </div>
+     <div class="stat-title">
+    Total Rules
+     </div>
+    </div>
+    <div class="stat-value" id="stat-total-rules">0</div>
+    <div class="stat-change positive"><span class="material-icons" style="font-size: 16px;">trending_up</span> updated</div>
+   </div>
+   <div class="stat-card">
+    <div class="stat-header">
+     <div class="stat-icon success"><span class="material-icons">verified</span>
+     </div>
+     <div class="stat-title">
+    Active Rules
+     </div>
+    </div>
+    <div class="stat-value" id="stat-active-rules">0</div>
+    <div class="stat-change positive"><span class="material-icons" style="font-size: 16px;">trending_up</span> updated</div>
+   </div>
+   <div class="stat-card">
+    <div class="stat-header">
+     <div class="stat-icon warning"><span class="material-icons">send</span>
+     </div>
+     <div class="stat-title">
+    Emails Routed
+     </div>
+    </div>
+    <div class="stat-value">1,247</div>
+    <div class="stat-change positive"><span class="material-icons" style="font-size: 16px;">trending_up</span> demo</div>
+   </div>
+   <div class="stat-card">
+    <div class="stat-header">
+     <div class="stat-icon error"><span class="material-icons">error_outline</span>
+     </div>
+     <div class="stat-title">
+    Failed Routes
+     </div>
+    </div>
+    <div class="stat-value">0</div>
+    <div class="stat-change negative"><span class="material-icons" style="font-size: 16px;">trending_down</span> demo</div>
+   </div>
+  </div>
+  <!-- API Status Panel -->
+  <div class="panel" style="margin-bottom: 24px;">
+  <div class="panel-header">
+   <h2 class="panel-title">API Connection Status</h2><button class="btn btn-secondary" id="btn-check-status"> <span class="material-icons">refresh</span> Check Status </button>
+   </div>
+   <div class="panel-content">
+    <div id="api-status" class="api-status-container">
+     <div class="api-status-item">
+    <div class="api-status-icon success"><span class="material-icons">cloud_done</span></div>
+    <div class="api-status-info">
+     <div class="api-status-title">Cloudflare API</div>
+     <div class="api-status-desc">Connected • Last checked just now</div>
+    </div>
+    <div class="api-status-badge success">Online</div>
+     </div>
+     <div class="api-status-item">
+    <div class="api-status-icon success"><span class="material-icons">email</span></div>
+    <div class="api-status-info">
+     <div class="api-status-title">Email Routing Service</div>
+     <div class="api-status-desc">Active • Processing emails normally</div>
+    </div>
+    <div class="api-status-badge success">Active</div>
+     </div>
+     <div class="api-status-item">
+    <div class="api-status-icon warning"><span class="material-icons">dns</span></div>
+    <div class="api-status-info">
+     <div class="api-status-title">DNS Configuration</div>
+     <div class="api-status-desc">MX records configured • Some propagation pending</div>
+    </div>
+    <div class="api-status-badge warning">Pending</div>
+     </div>
+    </div>
+   </div>
+  </div>
+  <div class="content-grid">
+   <div class="panel">
+    <div class="panel-header">
+     <h2 class="panel-title">Email Routing Rules</h2><button class="btn btn-secondary" id="btn-add-rule"> <span class="material-icons">add_circle_outline</span> Add Rule </button>
+    </div>
+    <div class="panel-content">
+     <div id="rules-container"></div>
+    </div>
+   </div>
+   <div class="panel">
+    <div class="panel-header">
+     <h2 class="panel-title">Recent Activity</h2>
+    </div>
+    <div class="panel-content">
+     <div class="activity-item">
+    <div class="activity-icon success"><span class="material-icons">check</span></div>
+    <div class="activity-content">
+     <div class="activity-title">Welcome</div>
+     <div class="activity-time">Just now</div>
+    </div>
+     </div>
+    </div>
+   </div>
+  </div>
+  </main><button class="fab" id="btn-fab-add"> <span class="material-icons">add_circle</span> </button>
+  </div>
+  <!-- Add/Edit Rule Modal -->
+  <div class="modal-overlay" id="ruleModal">
+   <div class="modal">
+  <div class="modal-header">
+   <h2 class="modal-title" id="modalTitle">Add New Rule</h2><button class="modal-close" id="btn-modal-close"> <span class="material-icons">close</span> </button>
+  </div>
+  <div class="modal-body">
+   <form id="ruleForm">
+    <div class="form-group"><label class="form-label" for="fromEmail">From Email Address</label> <input type="email" id="fromEmail" class="form-input" placeholder="e.g., contact@example.com" required>
+     <div class="form-help">The email address that will receive emails</div>
+    </div>
+    <div class="form-group"><label class="form-label" for="toEmail">Forward To</label> <input type="email" id="toEmail" class="form-input" placeholder="e.g., admin@company.com" required>
+     <div class="form-help">Where emails should be forwarded</div>
+    </div>
+    <div class="form-group"><label class="form-label" for="ruleType">Rule Type</label> <select id="ruleType" class="form-select"> <option value="forward">Forward</option> <option value="drop">Drop (Delete)</option> <option value="worker">Send to Worker</option> </select>
+     <div class="form-help">How this email should be handled</div>
+    </div>
+    <div class="form-group"><label class="form-label" for="priority">Priority</label> <select id="priority" class="form-select"> <option value="1">High (1)</option> <option value="5" selected>Normal (5)</option> <option value="10">Low (10)</option> </select>
+     <div class="form-help">Lower numbers have higher priority</div>
+    </div>
+    <div class="form-group"><label class="form-label" for="description">Description (Optional)</label> <input type="text" id="description" class="form-input" placeholder="Brief description of this rule">
+     <div class="form-help">Help identify this rule later</div>
+    </div>
+   </form>
+  </div>
+  <div class="modal-actions"><button type="button" class="btn btn-cancel" id="btn-cancel">Cancel</button> <button type="submit" form="ruleForm" class="btn" id="saveBtn"> <span class="material-icons">save</span> Save Rule </button>
+  </div>
+   </div>
+  </div>
+  <script src="/main.js" defer></script>
+ </body>
 </html>

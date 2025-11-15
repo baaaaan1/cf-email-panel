@@ -1,137 +1,141 @@
-# Cloudflare Email Panel ✉️
+ # Cloudflare Email Panel ✉️
 
-![license](https://img.shields.io/badge/license-ISC-blue.svg)
-![node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)
-![npm](https://img.shields.io/badge/npm-available-orange.svg)
+ ![license](https://img.shields.io/badge/license-ISC-blue.svg)
+ ![node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)
+ ![npm](https://img.shields.io/badge/npm-available-orange.svg)
 
-A lightweight panel to manage Cloudflare Email Routing — list/create/delete destinations and rules. Ideal when you want a simple UI to manage Cloudflare email routing.
+ Panel ringan untuk mengelola Cloudflare Email Routing — membuat/menampilkan/menghapus destinations dan rules. Cocok untuk admin yang ingin UI kecil untuk mengelola email routing Cloudflare.
 
-Tip: use the minimum‑privilege Cloudflare API token. Never commit your `.env` to a public repo.
+ > Tip: gunakan token Cloudflare dengan hak minimum (least privilege). Jangan commit `.env` ke repo publik.
 
----
+ ---
 
-## 🚀 Quickstart (Windows PowerShell)
+ ## 🚀 Cepat (Quickstart)
 
-1) Clone the repo and enter the folder:
+ 1. Clone repo dan masuk ke folder:
 
-```powershell
-git clone <your-repo-url>
-Set-Location .\cf-email-panel
-```
+ ```powershell
+ git clone <your-repo-url>
+ Set-Location .\cf-email-panel
+ ```
 
-2) Create your environment file from the example and fill in values:
+ 2. Salin `.env.example` ke `.env` dan lengkapi variabel:
 
-```powershell
-copy .env.example .env
-# then edit .env with your editor (set token and IDs)
-```
+ ```powershell
+ copy .env.example .env
+ # lalu edit .env dengan editor favorit Anda
+ ```
 
-3) Install dependencies:
+ 3. Install dependency:
 
-```powershell
-npm install
-```
+ ```powershell
+ npm install
+ ```
 
-4) Run in dev mode (auto‑reload) or start normally:
+ 4. Jalankan (dev - auto reload):
 
-```powershell
-npm run dev
-# or
-npm start
-```
+ ```powershell
+ npm run dev
+ ```
 
-Open http://localhost:3000 ✅
+ atau jalankan production:
 
----
+ ```powershell
+ npm start
+ ```
 
-## 🔐 Cloudflare token and IDs
+ Buka http://localhost:3000 ✅
 
-How to obtain the required values:
+ ---
 
-1) Log in to https://dash.cloudflare.com
-2) Account ID: go to the Account page → copy the Account ID
-3) Zone ID: go to your domain (zone) page → copy the Zone ID
-4) API Token: Profile → My Profile → API Tokens → Create Token
-	- Use the least permissions you need. For managing rules, include Email Routing:Edit on the relevant scope.
+ ## 🔐 Mengambil API Token & IDs (Cloudflare)
 
-Copy the token once it’s generated and put it in `.env` as `CF_API_TOKEN`.
+ Ikuti langkah ini untuk mendapatkan token dan IDs yang diperlukan:
 
----
+ 1. Masuk ke https://dash.cloudflare.com
+ 2. Account ID: buka halaman Account → salin `Account ID`
+ 3. Zone ID: buka halaman domain (zone) → salin `Zone ID`
+ 4. API Token: Profile → My Profile → API Tokens → Create Token. Pilih permissions minimal (Account:Read / Email Routing:Edit ketika perlu).
 
-## 🧩 Project structure (key files)
+ Salin token sekali saat dibuat dan simpan di `.env` sebagai `CF_API_TOKEN`.
 
-- `server.js` — Express app and JSON API
-- `.env.example` — sample environment configuration
-- `public/` — static front‑end (index.html and assets)
-- `start.ps1`, `start.bat` — Windows helper launchers
-- `README.md` — this document
+ ---
 
----
+ ## 🧩 Struktur & file penting
 
-## 🔧 Configuration (.env)
+ - `server.js` — aplikasinya (Express)
+ - `.env.example` — contoh konfigurasi environment
+ - `start.ps1`, `start.bat` — helper untuk Windows
+ - `README.md` — dokumentasi ini
 
-Copy `.env.example` to `.env` and set your values.
+ ---
 
-```dotenv
-PORT=3000
-CF_API_TOKEN=cf_...       # Cloudflare API token
-CF_ACCOUNT_ID=...         # Your Account ID
-CF_ZONE_ID=...            # Your Zone ID
-```
+ ## 🔧 Konfigurasi (.env)
 
----
+ Contoh `.env` (isi `.env` Anda, jangan commit file ini):
 
-## ▶️ Run and test
+ ```text
+ PORT=3000
+ CF_API_TOKEN=cf_...       # API token Cloudflare
+ CF_ACCOUNT_ID=...         # Account ID
+ CF_ZONE_ID=...            # Zone ID
+ ```
 
-Start the server then check health:
+ ---
 
-```powershell
-Invoke-WebRequest -UseBasicParsing http://localhost:3000/health
-```
+ ## 🛡️ Keamanan & Publish ke GitHub
 
-Open the app in your browser: http://localhost:3000
+ Sebelum mem-push public:
 
----
+ - Pastikan `.gitignore` berisi `.env`.
+ - Jika `.env` pernah ter-commit, hapus dari index dan commit:
 
-## 🔒 Security and publishing to GitHub
+ ```bash
+ git rm --cached .env
+ git commit -m "Remove .env"
+ git push
+ ```
 
-- Ensure `.gitignore` contains `.env` and don’t commit secrets.
-- If `.env` was ever committed, remove it from the index and push:
+ - Jika token ter-expose, segera rotate/revoke di Cloudflare.
+ - Untuk membersihkan history: gunakan BFG Repo Cleaner (direkomendasikan) atau `git filter-branch`.
 
-```bash
-git rm --cached .env
-git commit -m "Remove .env"
-git push
-```
+ ---
 
-- If a token was exposed, rotate/revoke it in Cloudflare immediately.
-- To scrub history, use BFG Repo Cleaner or `git filter-branch`.
+ ## ✅ Health check & testing
 
----
+ Setelah server berjalan, cek:
 
-## 🛠️ Production deploy (quick)
+ ```powershell
+ curl http://localhost:3000/health
+ ```
 
-This app doesn’t need a build step. Use a process manager like PM2:
+ Buka root di browser: http://localhost:3000
 
-```powershell
-npm install -g pm2
-pm2 start server.js --name cf-email-panel --env production
-```
+ ---
 
----
+ ## 🛠️ Deploy production (singkat)
 
-## 📣 Contributing
+ Aplikasi ini tidak perlu build. Untuk production gunakan process manager seperti PM2:
 
-PRs and issues are welcome — please don’t include secrets.
+ ```powershell
+ npm install -g pm2
+ pm2 start server.js --name cf-email-panel --env production
+ ```
 
----
+ ---
 
-## 📄 License
+ ## 📣 Contributing
 
-ISC
+ PR dan issues welcome — jangan sertakan secrets.
 
----
+ ---
 
-Thanks for using and contributing! ⭐
+ ## 📄 License
+
+ ISC
+
+ ---
+
+ Terima kasih sudah menggunakan/menyumbang! ⭐
 
 

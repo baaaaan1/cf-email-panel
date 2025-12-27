@@ -154,7 +154,7 @@ CMD ["node", "server.js"]
 - Test otomatis (Jest) untuk helper Cloudflare API
 
 ---
-
+npm
 ## 📣 Contributing
 
 PR & issues dipersilakan — jangan sertakan secrets. Ikuti prinsip least privilege.

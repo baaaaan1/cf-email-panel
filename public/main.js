@@ -103,6 +103,9 @@ function createRuleElement(rule) {
     </div>
     <div class="rule-actions">
       <div class="rule-status ${isActive ? 'active' : 'inactive'}">${isActive ? 'Active' : 'Inactive'}</div>
+      <button class="rule-action-btn" data-action="copy" title="Copy Email">
+        <span class="material-icons">content_copy</span>
+      </button>
       <button class="rule-action-btn" data-action="toggle" title="Toggle Status">
         <span class="material-icons">${isActive ? 'power_settings_new' : 'power_off'}</span>
       </button>
@@ -168,6 +171,16 @@ async function handleDelete(ruleElement, button) {
   }
 }
 
+async function handleCopy(ruleElement) {
+  const email = ruleElement.querySelector('.rule-from').textContent.trim();
+  try {
+    await navigator.clipboard.writeText(email);
+    showNotification('Email copied to clipboard', 'success');
+  } catch (e) {
+    showNotification('Failed to copy: ' + e.message, 'error');
+  }
+}
+
 // API Status Check (uses /health when available)
 async function checkApiStatus(buttonEl) {
   const button = buttonEl;
@@ -226,6 +239,85 @@ function showNotification(message, type = 'success') {
   }, 3000);
 }
 
+// Inbox functionality
+async function loadInbox() {
+  const listContainer = document.getElementById('message-list');
+  listContainer.innerHTML = '<div class="empty-state"><span class="material-icons spin">refresh</span> Loading...</div>';
+  
+  try {
+    // NOTE: This endpoint (/api/messages) needs to be implemented in your backend/worker
+    // It should return an array of objects: { id, from, subject, date, snippet, body }
+    const messages = await api('/api/messages');
+    renderMessageList(messages);
+  } catch (e) {
+    listContainer.innerHTML = `
+      <div class="empty-state">
+        <span class="material-icons">cloud_off</span>
+        <p>Backend not connected</p>
+        <small style="font-size: 10px; opacity: 0.7">Implement GET /api/messages</small>
+      </div>`;
+  }
+}
+
+function renderMessageList(messages) {
+  const container = document.getElementById('message-list');
+  if (!messages || messages.length === 0) {
+    container.innerHTML = '<div class="empty-state">No messages found</div>';
+    return;
+  }
+  
+  container.innerHTML = '';
+  messages.forEach(msg => {
+    const el = document.createElement('div');
+    el.className = 'message-item';
+    el.innerHTML = `
+      <div class="msg-sender">${msg.from}</div>
+      <div class="msg-subject">${msg.subject}</div>
+      <div class="msg-meta"><span>${new Date(msg.date).toLocaleDateString()}</span></div>
+    `;
+    el.addEventListener('click', () => openMessage(msg, el));
+    container.appendChild(el);
+  });
+}
+
+function openMessage(msg, element) {
+  // Highlight selected
+  document.querySelectorAll('.message-item').forEach(e => e.classList.remove('selected'));
+  element.classList.add('selected');
+
+  const viewer = document.getElementById('message-viewer');
+  viewer.innerHTML = `
+    <div class="email-detail-header">
+      <div class="email-subject">${msg.subject}</div>
+      <div class="email-meta-row">
+        <span>From: <strong>${msg.from}</strong></span>
+        <span>${new Date(msg.date).toLocaleString()}</span>
+      </div>
+      <div class="email-meta-row" style="margin-top:4px">
+        <span>To: ${msg.to || 'Me'}</span>
+      </div>
+    </div>
+    <div class="email-body">${msg.body || '(No content)'}</div>
+  `;
+}
+
+function initTabs() {
+  const tabs = document.querySelectorAll('.nav-tab');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      // Toggle tabs
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      // Toggle views
+      document.querySelectorAll('.view-section').forEach(v => v.style.display = 'none');
+      const targetId = tab.getAttribute('data-target');
+      document.getElementById(targetId).style.display = 'block';
+      // Load data if inbox
+      if (targetId === 'view-inbox') loadInbox();
+    });
+  });
+}
+
 // Element SDK configuration (optional)
 async function onConfigChange(config) {
   const panelTitle = config.panel_title || defaultConfig.panel_title;
@@ -240,6 +332,7 @@ function mapToEditPanelValues(config) { return new Map([["panel_title", config.p
 document.addEventListener('DOMContentLoaded', function () {
   // Theme
   loadTheme();
+  initTabs();
   const themeBtn = document.getElementById('btn-theme-toggle');
   if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
 
@@ -251,6 +344,10 @@ document.addEventListener('DOMContentLoaded', function () {
   // API Status check button
   const checkBtn = document.getElementById('btn-check-status');
   if (checkBtn) checkBtn.addEventListener('click', (e) => checkApiStatus(e.currentTarget));
+
+  // Inbox refresh
+  const refreshInboxBtn = document.getElementById('btn-refresh-inbox');
+  if (refreshInboxBtn) refreshInboxBtn.addEventListener('click', loadInbox);
 
   // Open modal buttons
   const addRuleBtn = document.getElementById('btn-add-rule');
@@ -279,6 +376,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (action === 'toggle') return handleToggle(ruleElement, btn);
       if (action === 'edit') return populateEditRule(ruleElement);
       if (action === 'delete') return handleDelete(ruleElement, btn);
+      if (action === 'copy') return handleCopy(ruleElement);
     });
   }
 

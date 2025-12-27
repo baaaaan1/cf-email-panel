@@ -6,6 +6,7 @@
 const express = require('express');
 const axios = require('axios');
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
@@ -14,39 +15,39 @@ app.use(express.json());
 app.use((req, _res, next) => { try { console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`); } catch {} finally { next(); } });
 
 const PORT = process.env.PORT || 3000;
-const CF_API_TOKEN = process.env.CF_API_TOKEN;
-const CF_ACCOUNT_ID = process.env.CF_ACCOUNT_ID;
-const CF_ZONE_ID = process.env.CF_ZONE_ID;
 
-if (!CF_API_TOKEN || !CF_ACCOUNT_ID || !CF_ZONE_ID) {
-  console.error('[FATAL] Missing .env: CF_API_TOKEN, CF_ACCOUNT_ID, CF_ZONE_ID');
-  process.exit(1);
+if (!process.env.CF_API_TOKEN || !process.env.CF_ACCOUNT_ID || !process.env.CF_ZONE_ID) {
+  console.warn('[WARN] Missing .env: CF_API_TOKEN, CF_ACCOUNT_ID, CF_ZONE_ID. Please configure via Settings.');
 }
 
 const cf = axios.create({
   baseURL: 'https://api.cloudflare.com/client/v4',
-  headers: { Authorization: `Bearer ${CF_API_TOKEN}` }
+  headers: { Authorization: `Bearer ${process.env.CF_API_TOKEN || ''}` }
 });
+
+function updateCfToken() {
+  cf.defaults.headers['Authorization'] = `Bearer ${process.env.CF_API_TOKEN || ''}`;
+}
 
 // ------------- CF helpers -------------
 async function listDestinations() {
-  const res = await cf.get(`/accounts/${CF_ACCOUNT_ID}/email/routing/addresses`, { params: { per_page: 100 } });
+  const res = await cf.get(`/accounts/${process.env.CF_ACCOUNT_ID}/email/routing/addresses`, { params: { per_page: 100 } });
   return res.data.result || [];
 }
 async function createDestination(email) {
-  const res = await cf.post(`/accounts/${CF_ACCOUNT_ID}/email/routing/addresses`, { email });
+  const res = await cf.post(`/accounts/${process.env.CF_ACCOUNT_ID}/email/routing/addresses`, { email });
   return res.data.result;
 }
 async function deleteDestination(id) {
-  const res = await cf.delete(`/accounts/${CF_ACCOUNT_ID}/email/routing/addresses/${id}`);
+  const res = await cf.delete(`/accounts/${process.env.CF_ACCOUNT_ID}/email/routing/addresses/${id}`);
   return res.data.result;
 }
 async function listRules() {
-  const res = await cf.get(`/zones/${CF_ZONE_ID}/email/routing/rules`, { params: { per_page: 100 } });
+  const res = await cf.get(`/zones/${process.env.CF_ZONE_ID}/email/routing/rules`, { params: { per_page: 100 } });
   return res.data.result || [];
 }
 async function getRule(ruleId) {
-  const res = await cf.get(`/zones/${CF_ZONE_ID}/email/routing/rules/${ruleId}`);
+  const res = await cf.get(`/zones/${process.env.CF_ZONE_ID}/email/routing/rules/${ruleId}`);
   return res.data.result;
 }
 async function createRule(customEmail, destinationInput) {
@@ -57,7 +58,7 @@ async function createRule(customEmail, destinationInput) {
     matchers: [{ type: 'literal', field: 'to', value: customEmail }],
     actions: [{ type: 'forward', value }]
   };
-  const res = await cf.post(`/zones/${CF_ZONE_ID}/email/routing/rules`, body);
+  const res = await cf.post(`/zones/${process.env.CF_ZONE_ID}/email/routing/rules`, body);
   return res.data.result;
 }
 async function updateRule(ruleId, { customEmail, destinationId, enabled }) {
@@ -73,18 +74,18 @@ async function updateRule(ruleId, { customEmail, destinationId, enabled }) {
     matchers: customEmail ? [{ type: 'literal', field: 'to', value: customEmail }] : current.matchers,
     actions
   };
-  const res = await cf.put(`/zones/${CF_ZONE_ID}/email/routing/rules/${ruleId}`, body);
+  const res = await cf.put(`/zones/${process.env.CF_ZONE_ID}/email/routing/rules/${ruleId}`, body);
   return res.data.result;
 }
 async function deleteRule(ruleId) {
-  const res = await cf.delete(`/zones/${CF_ZONE_ID}/email/routing/rules/${ruleId}`);
+  const res = await cf.delete(`/zones/${process.env.CF_ZONE_ID}/email/routing/rules/${ruleId}`);
   return res.data.result;
 }
 
 async function resolveDestinationArray(input) {
   if (!input) throw new Error('destination required');
   if (/@/.test(input)) return [String(input).trim().toLowerCase()];
-  const r = await cf.get(`/accounts/${CF_ACCOUNT_ID}/email/routing/addresses/${input}`);
+  const r = await cf.get(`/accounts/${process.env.CF_ACCOUNT_ID}/email/routing/addresses/${input}`);
   if (!r.data || !r.data.result || !r.data.result.email) throw new Error('destination not found: ' + input);
   if (r.data.result.verified === false) throw new Error('destination not verified: ' + r.data.result.email);
   return [String(r.data.result.email).trim().toLowerCase()];
@@ -100,9 +101,6 @@ function eToMessage(e) {
   }
   return String((e && (e.message || e)) || e);
 }
-
-// ------------- Static files -------------
-app.use(express.static(path.join(__dirname, 'public')));
 
 // ------------- JSON APIs -------------
 // Destinations
@@ -147,6 +145,43 @@ app.delete('/api/rules/:id', async (req, res) => {
   try { await deleteRule(req.params.id); res.json({ ok: true }); } catch (e) { res.status(500).json({ error: eToMessage(e) }); }
 });
 
+// Configuration
+app.get('/api/config', (_req, res) => {
+  res.json({
+    account_id: process.env.CF_ACCOUNT_ID || '',
+    zone_id: process.env.CF_ZONE_ID || '',
+    has_token: !!process.env.CF_API_TOKEN
+  });
+});
+
+app.post('/api/config', (req, res) => {
+  const { account_id, zone_id, api_token } = req.body;
+  
+  if (account_id !== undefined) process.env.CF_ACCOUNT_ID = account_id;
+  if (zone_id !== undefined) process.env.CF_ZONE_ID = zone_id;
+  if (api_token) process.env.CF_API_TOKEN = api_token;
+
+  try {
+    const envPath = path.join(__dirname, '.env');
+    let content = '';
+    if (fs.existsSync(envPath)) content = fs.readFileSync(envPath, 'utf8');
+    
+    const updateKey = (key, val) => {
+      const regex = new RegExp(`^${key}=.*`, 'm');
+      if (regex.test(content)) content = content.replace(regex, `${key}=${val}`);
+      else content += `\n${key}=${val}`;
+    };
+
+    if (account_id !== undefined) updateKey('CF_ACCOUNT_ID', account_id);
+    if (zone_id !== undefined) updateKey('CF_ZONE_ID', zone_id);
+    if (api_token) updateKey('CF_API_TOKEN', api_token);
+
+    fs.writeFileSync(envPath, content.trim() + '\n');
+    updateCfToken();
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Catch‑all
 app.post('/api/catch-all', async (req, res) => {
   try {
@@ -160,7 +195,7 @@ app.post('/api/catch-all', async (req, res) => {
       const value = await resolveDestinationArray(destinationId);
       body = { enabled: true, action: { type: 'forward', value } };
     } else return res.status(400).json({ error: 'unknown action' });
-    const resp = await cf.put(`/zones/${CF_ZONE_ID}/email/routing/rules/catch_all`, body);
+    const resp = await cf.put(`/zones/${process.env.CF_ZONE_ID}/email/routing/rules/catch_all`, body);
     if (!resp.data || !resp.data.success) throw new Error(JSON.stringify(resp.data && (resp.data.errors || resp.data)));
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: eToMessage(e) }); }
@@ -168,9 +203,15 @@ app.post('/api/catch-all', async (req, res) => {
 
 // Health
 app.get('/health', async (_req, res) => {
-  try { const [d, r] = await Promise.all([listDestinations(), listRules()]); res.json({ ok: true, destinations: d.length, rules: r.length }); }
+  try {
+    const [d, r] = await Promise.all([listDestinations(), listRules()]);
+    res.json({ ok: true, destinations: d.length, rules: r.length });
+  }
   catch (e) { res.status(500).json({ ok: false, error: eToMessage(e) }); }
 });
+
+// ------------- Static files -------------
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Root -> SPA fallback (exclude API/health). Use RegExp to avoid path-to-regexp quirks
 app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));

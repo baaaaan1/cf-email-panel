@@ -190,7 +190,7 @@ async function checkApiStatus(buttonEl) {
   try {
     const h = await api('/health');
     const overallStatus = h.ok ? 'success' : 'error';
-    updateApiStatus(overallStatus);
+    updateApiStatus(overallStatus, h);
     showNotification('API status updated', h.ok ? 'success' : 'error');
   } catch (e) {
     updateApiStatus('error');
@@ -201,7 +201,7 @@ async function checkApiStatus(buttonEl) {
   }
 }
 
-function updateApiStatus(overallStatus = 'success') {
+function updateApiStatus(overallStatus = 'success', data = null) {
   const container = document.getElementById('api-status');
   const now = new Date();
   const timeString = now.toLocaleTimeString();
@@ -224,6 +224,44 @@ function updateApiStatus(overallStatus = 'success') {
   }
 }
 
+// Settings Management
+async function openSettings() {
+  const modal = document.getElementById('settingsModal');
+  const accountInput = document.getElementById('cfgAccountId');
+  const zoneInput = document.getElementById('cfgZoneId');
+  const tokenInput = document.getElementById('cfgApiToken');
+  let config = { account_id: '', zone_id: '', has_token: false };
+  
+  try {
+    config = await api('/api/config');
+  } catch (e) {
+    showNotification('Could not load config: ' + e.message, 'warning');
+  }
+
+  accountInput.value = config.account_id || '';
+  zoneInput.value = config.zone_id || '';
+  tokenInput.value = ''; // Don't show token
+  tokenInput.placeholder = config.has_token ? '******** (Set to update)' : 'Enter API Token';
+  modal.classList.add('active');
+}
+
+async function saveSettings(e) {
+  e.preventDefault();
+  const body = {
+    account_id: document.getElementById('cfgAccountId').value.trim(),
+    zone_id: document.getElementById('cfgZoneId').value.trim(),
+    api_token: document.getElementById('cfgApiToken').value.trim()
+  };
+  try {
+    await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
+    showNotification('Configuration saved!', 'success');
+    document.getElementById('settingsModal').classList.remove('active');
+    checkApiStatus(document.getElementById('btn-check-status')); // Refresh status
+  } catch (err) {
+    showNotification('Save failed: ' + err.message, 'error');
+  }
+}
+
 function showNotification(message, type = 'success') {
   const notification = document.createElement('div');
   notification.className = `notification ${type}`;
@@ -239,68 +277,6 @@ function showNotification(message, type = 'success') {
   }, 3000);
 }
 
-// Inbox functionality
-async function loadInbox() {
-  const listContainer = document.getElementById('message-list');
-  listContainer.innerHTML = '<div class="empty-state"><span class="material-icons spin">refresh</span> Loading...</div>';
-  
-  try {
-    // NOTE: This endpoint (/api/messages) needs to be implemented in your backend/worker
-    // It should return an array of objects: { id, from, subject, date, snippet, body }
-    const messages = await api('/api/messages');
-    renderMessageList(messages);
-  } catch (e) {
-    listContainer.innerHTML = `
-      <div class="empty-state">
-        <span class="material-icons">cloud_off</span>
-        <p>Backend not connected</p>
-        <small style="font-size: 10px; opacity: 0.7">Implement GET /api/messages</small>
-      </div>`;
-  }
-}
-
-function renderMessageList(messages) {
-  const container = document.getElementById('message-list');
-  if (!messages || messages.length === 0) {
-    container.innerHTML = '<div class="empty-state">No messages found</div>';
-    return;
-  }
-  
-  container.innerHTML = '';
-  messages.forEach(msg => {
-    const el = document.createElement('div');
-    el.className = 'message-item';
-    el.innerHTML = `
-      <div class="msg-sender">${msg.from}</div>
-      <div class="msg-subject">${msg.subject}</div>
-      <div class="msg-meta"><span>${new Date(msg.date).toLocaleDateString()}</span></div>
-    `;
-    el.addEventListener('click', () => openMessage(msg, el));
-    container.appendChild(el);
-  });
-}
-
-function openMessage(msg, element) {
-  // Highlight selected
-  document.querySelectorAll('.message-item').forEach(e => e.classList.remove('selected'));
-  element.classList.add('selected');
-
-  const viewer = document.getElementById('message-viewer');
-  viewer.innerHTML = `
-    <div class="email-detail-header">
-      <div class="email-subject">${msg.subject}</div>
-      <div class="email-meta-row">
-        <span>From: <strong>${msg.from}</strong></span>
-        <span>${new Date(msg.date).toLocaleString()}</span>
-      </div>
-      <div class="email-meta-row" style="margin-top:4px">
-        <span>To: ${msg.to || 'Me'}</span>
-      </div>
-    </div>
-    <div class="email-body">${msg.body || '(No content)'}</div>
-  `;
-}
-
 function initTabs() {
   const tabs = document.querySelectorAll('.nav-tab');
   tabs.forEach(tab => {
@@ -312,8 +288,6 @@ function initTabs() {
       document.querySelectorAll('.view-section').forEach(v => v.style.display = 'none');
       const targetId = tab.getAttribute('data-target');
       document.getElementById(targetId).style.display = 'block';
-      // Load data if inbox
-      if (targetId === 'view-inbox') loadInbox();
     });
   });
 }
@@ -335,6 +309,15 @@ document.addEventListener('DOMContentLoaded', function () {
   initTabs();
   const themeBtn = document.getElementById('btn-theme-toggle');
   if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
+  
+  // Settings
+  const settingsBtn = document.getElementById('btn-settings');
+  const settingsModal = document.getElementById('settingsModal');
+  const settingsForm = document.getElementById('settingsForm');
+  if (settingsBtn) settingsBtn.addEventListener('click', openSettings);
+  if (settingsForm) settingsForm.addEventListener('submit', saveSettings);
+  document.getElementById('btn-settings-close')?.addEventListener('click', () => settingsModal.classList.remove('active'));
+  document.getElementById('btn-settings-cancel')?.addEventListener('click', () => settingsModal.classList.remove('active'));
 
   // Element SDK
   if (window.elementSdk) {
@@ -344,10 +327,6 @@ document.addEventListener('DOMContentLoaded', function () {
   // API Status check button
   const checkBtn = document.getElementById('btn-check-status');
   if (checkBtn) checkBtn.addEventListener('click', (e) => checkApiStatus(e.currentTarget));
-
-  // Inbox refresh
-  const refreshInboxBtn = document.getElementById('btn-refresh-inbox');
-  if (refreshInboxBtn) refreshInboxBtn.addEventListener('click', loadInbox);
 
   // Open modal buttons
   const addRuleBtn = document.getElementById('btn-add-rule');

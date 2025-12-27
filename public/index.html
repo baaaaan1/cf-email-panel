@@ -25,13 +25,16 @@
      Manage your email routing settings
     </div>
    </div>
-  </div><button class="theme-toggle" id="btn-theme-toggle"> <span class="material-icons" id="theme-icon">dark_mode</span> <span id="theme-text">Dark Mode</span> </button>
+  </div>
+  <div class="flex gap-3">
+   <button class="theme-toggle" id="btn-settings"> <span class="material-icons">settings</span> <span class="hidden sm:inline">Settings</span> </button>
+   <button class="theme-toggle" id="btn-theme-toggle"> <span class="material-icons" id="theme-icon">dark_mode</span> <span id="theme-text" class="hidden sm:inline">Dark Mode</span> </button>
+  </div>
    </header>
    <main class="main-content">
   <!-- Navigation Tabs -->
   <div class="nav-tabs">
    <button class="nav-tab active" data-target="view-dashboard"><span class="material-icons">dashboard</span> Dashboard</button>
-   <button class="nav-tab" data-target="view-inbox"><span class="material-icons">inbox</span> Inbox (Beta)</button>
   </div>
 
   <!-- Dashboard View -->
@@ -103,26 +106,6 @@
   </div>
   </div>
 
-  <!-- Inbox View -->
-  <div id="view-inbox" class="view-section" style="display: none;">
-   <div class="panel inbox-panel">
-    <div class="panel-header">
-     <h2 class="panel-title">Received Emails</h2>
-     <div class="flex gap-2">
-      <button class="btn btn-secondary" id="btn-refresh-inbox"><span class="material-icons">refresh</span> Refresh</button>
-     </div>
-    </div>
-    <div class="inbox-layout">
-     <div class="message-list" id="message-list">
-      <!-- Messages will be loaded here -->
-      <div class="empty-state">Loading...</div>
-     </div>
-     <div class="message-viewer" id="message-viewer">
-      <div class="empty-viewer"><span class="material-icons">email</span><p>Select an email to read</p></div>
-     </div>
-    </div>
-   </div>
-  </div>
   </main>
   </div>
   <!-- Add/Edit Rule Modal -->
@@ -152,6 +135,24 @@
   </div>
   <div class="modal-actions"><button type="button" class="btn btn-cancel" id="btn-cancel">Cancel</button> <button type="submit" form="ruleForm" class="btn" id="saveBtn"> <span class="material-icons">save</span> Save Rule </button>
   </div>
+   </div>
+  </div>
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settingsModal">
+   <div class="modal">
+    <div class="modal-header">
+     <h2 class="modal-title">API Configuration</h2><button class="modal-close" id="btn-settings-close"> <span class="material-icons">close</span> </button>
+    </div>
+    <div class="modal-body">
+     <form id="settingsForm">
+      <div class="form-group"><label class="form-label" for="cfgAccountId">Account ID</label> <input type="text" id="cfgAccountId" class="form-input" placeholder="Cloudflare Account ID"></div>
+      <div class="form-group"><label class="form-label" for="cfgZoneId">Zone ID</label> <input type="text" id="cfgZoneId" class="form-input" placeholder="Cloudflare Zone ID"></div>
+      <div class="form-group"><label class="form-label" for="cfgApiToken">API Token</label> <input type="password" id="cfgApiToken" class="form-input" placeholder="Update API Token (leave empty to keep current)">
+       <div class="form-help">Token requires Email Routing Read/Write permissions</div>
+      </div>
+     </form>
+    </div>
+    <div class="modal-actions"><button type="button" class="btn btn-cancel" id="btn-settings-cancel">Cancel</button> <button type="submit" form="settingsForm" class="btn"> <span class="material-icons">save</span> Save Config </button></div>
    </div>
   </div>
   <script src="/main.js" defer></script>

@@ -19,6 +19,9 @@ const PORT = process.env.PORT || 3000;
 if (!process.env.CF_API_TOKEN || !process.env.CF_ACCOUNT_ID || !process.env.CF_ZONE_ID) {
   console.warn('[WARN] Missing .env: CF_API_TOKEN, CF_ACCOUNT_ID, CF_ZONE_ID. Please configure via Settings.');
 }
+if (!process.env.CF_D1_DATABASE_ID) {
+  console.warn('[WARN] Missing .env: CF_D1_DATABASE_ID. Inbox features will be disabled.');
+}
 
 const cf = axios.create({
   baseURL: 'https://api.cloudflare.com/client/v4',
@@ -50,23 +53,45 @@ async function getRule(ruleId) {
   const res = await cf.get(`/zones/${process.env.CF_ZONE_ID}/email/routing/rules/${ruleId}`);
   return res.data.result;
 }
-async function createRule(customEmail, destinationInput) {
-  const value = await resolveDestinationArray(destinationInput);
+async function createRule(customEmail, destinationInput, type = 'forward') {
+  let actions;
+  if (type === 'worker') {
+    actions = [{ type: 'worker', value: [destinationInput] }];
+  } else if (type === 'drop') {
+    actions = [{ type: 'drop' }];
+  } else {
+    const value = await resolveDestinationArray(destinationInput);
+    actions = [{ type: 'forward', value }];
+  }
   const body = {
     name: `route:${customEmail}`,
     enabled: true,
     matchers: [{ type: 'literal', field: 'to', value: customEmail }],
-    actions: [{ type: 'forward', value }]
+    actions
   };
   const res = await cf.post(`/zones/${process.env.CF_ZONE_ID}/email/routing/rules`, body);
   return res.data.result;
 }
-async function updateRule(ruleId, { customEmail, destinationId, enabled }) {
+async function updateRule(ruleId, { customEmail, destinationId, enabled, type }) {
   const current = await getRule(ruleId);
   let actions = current.actions;
-  if (destinationId) {
-    const value = await resolveDestinationArray(destinationId);
-    actions = [{ type: 'forward', value }];
+  
+  // Handle type/destination updates
+  const targetType = type || (actions[0] && actions[0].type) || 'forward';
+  if (type || destinationId) {
+    if (targetType === 'drop') {
+      actions = [{ type: 'drop' }];
+    } else if (targetType === 'worker') {
+      const val = destinationId || (actions[0] && actions[0].value && actions[0].value[0]);
+      if (val) actions = [{ type: 'worker', value: [val] }];
+    } else {
+      // forward
+      const val = destinationId || (actions[0] && actions[0].value && actions[0].value[0]);
+      if (val && destinationId) { // Only resolve if explicitly updating destination
+        const value = await resolveDestinationArray(destinationId);
+        actions = [{ type: 'forward', value }];
+      }
+    }
   }
   const body = {
     name: current.name || (customEmail ? `route:${customEmail}` : undefined),
@@ -89,6 +114,16 @@ async function resolveDestinationArray(input) {
   if (!r.data || !r.data.result || !r.data.result.email) throw new Error('destination not found: ' + input);
   if (r.data.result.verified === false) throw new Error('destination not verified: ' + r.data.result.email);
   return [String(r.data.result.email).trim().toLowerCase()];
+}
+
+async function queryD1(sql, params = []) {
+  if (!process.env.CF_D1_DATABASE_ID) throw new Error('D1 Database ID not configured');
+  if (process.env.CF_D1_DATABASE_ID.includes('REPLACE')) throw new Error('D1 Database ID is invalid (placeholder detected)');
+  const res = await cf.post(`/accounts/${process.env.CF_ACCOUNT_ID}/d1/database/${process.env.CF_D1_DATABASE_ID}/query`, {
+    sql,
+    params
+  });
+  return (res.data.result && res.data.result[0] && res.data.result[0].results) || [];
 }
 
 function eToMessage(e) {
@@ -127,22 +162,57 @@ app.post('/api/rules', async (req, res) => {
     const customEmail = String(req.body.customEmail || '').trim();
     let destInput = String(req.body.destinationIdManual || '').trim();
     if (!destInput) destInput = String(req.body.destinationId || '').trim();
+    const type = String(req.body.type || 'forward').trim();
+    
     if (!customEmail) return res.status(400).json({ error: 'customEmail required' });
-    if (!destInput) return res.status(400).json({ error: 'destination required' });
-    res.json(await createRule(customEmail, destInput));
+    if (type !== 'drop' && !destInput) return res.status(400).json({ error: 'destination required' });
+    
+    res.json(await createRule(customEmail, destInput, type));
   } catch (e) { res.status(500).json({ error: eToMessage(e) }); }
 });
 app.put('/api/rules/:id', async (req, res) => {
   try {
     const customEmail = String(req.body.customEmail || '').trim();
     const destinationId = String(req.body.destinationId || '').trim();
+    const type = req.body.type ? String(req.body.type).trim() : undefined;
     const enabledVal = String(req.body.enabled ?? '').toLowerCase();
     const enabled = enabledVal === 'true' ? true : enabledVal === 'false' ? false : undefined;
-    res.json(await updateRule(req.params.id, { customEmail, destinationId, enabled }));
+    res.json(await updateRule(req.params.id, { customEmail, destinationId, enabled, type }));
   } catch (e) { res.status(500).json({ error: eToMessage(e) }); }
 });
 app.delete('/api/rules/:id', async (req, res) => {
   try { await deleteRule(req.params.id); res.json({ ok: true }); } catch (e) { res.status(500).json({ error: eToMessage(e) }); }
+});
+
+// Inbox
+app.get('/api/inbox', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+    const sql = `SELECT id, sender, recipient, subject, created_at FROM emails ORDER BY id DESC LIMIT ? OFFSET ?`;
+    res.json(await queryD1(sql, [limit, offset]));
+  } catch (e) { res.status(500).json({ error: eToMessage(e) }); }
+});
+app.get('/api/inbox/:id', async (req, res) => {
+  try {
+    const sql = `SELECT * FROM emails WHERE id = ?`;
+    const rows = await queryD1(sql, [req.params.id]);
+    if (!rows || !rows.length) return res.status(404).json({ error: 'Message not found' });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: eToMessage(e) }); }
+});
+app.delete('/api/inbox/:id', async (req, res) => {
+  try { await queryD1(`DELETE FROM emails WHERE id = ?`, [req.params.id]); res.json({ ok: true }); } catch (e) { res.status(500).json({ error: eToMessage(e) }); }
+});
+
+// Init DB
+app.post('/api/inbox/init', async (_req, res) => {
+  try {
+    const schemaPath = path.join(__dirname, 'worker', 'schema.sql');
+    const sql = fs.readFileSync(schemaPath, 'utf8');
+    await queryD1(sql);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: eToMessage(e) }); }
 });
 
 // Configuration
@@ -150,15 +220,17 @@ app.get('/api/config', (_req, res) => {
   res.json({
     account_id: process.env.CF_ACCOUNT_ID || '',
     zone_id: process.env.CF_ZONE_ID || '',
+    d1_database_id: process.env.CF_D1_DATABASE_ID || '',
     has_token: !!process.env.CF_API_TOKEN
   });
 });
 
 app.post('/api/config', (req, res) => {
-  const { account_id, zone_id, api_token } = req.body;
+  const { account_id, zone_id, api_token, d1_database_id } = req.body;
   
   if (account_id !== undefined) process.env.CF_ACCOUNT_ID = account_id;
   if (zone_id !== undefined) process.env.CF_ZONE_ID = zone_id;
+  if (d1_database_id !== undefined) process.env.CF_D1_DATABASE_ID = d1_database_id;
   if (api_token) process.env.CF_API_TOKEN = api_token;
 
   try {
@@ -174,6 +246,7 @@ app.post('/api/config', (req, res) => {
 
     if (account_id !== undefined) updateKey('CF_ACCOUNT_ID', account_id);
     if (zone_id !== undefined) updateKey('CF_ZONE_ID', zone_id);
+    if (d1_database_id !== undefined) updateKey('CF_D1_DATABASE_ID', d1_database_id);
     if (api_token) updateKey('CF_API_TOKEN', api_token);
 
     fs.writeFileSync(envPath, content.trim() + '\n');

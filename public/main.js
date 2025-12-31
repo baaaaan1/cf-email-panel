@@ -49,12 +49,16 @@ function showAddRuleDialog() {
 function populateEditRule(ruleElement) {
   editingRuleElement = ruleElement;
   editingRuleId = ruleElement.getAttribute('data-id');
+  const type = ruleElement.getAttribute('data-type') || 'forward';
+  const dest = ruleElement.getAttribute('data-value') || '';
   const fromEmail = ruleElement.querySelector('.rule-from').textContent.trim();
-  const toEmail = ruleElement.querySelector('.rule-to').textContent.replace('→ ', '').trim();
+  
   document.getElementById('modalTitle').textContent = 'Edit Rule';
   document.getElementById('saveBtn').innerHTML = '<span class="material-icons">save</span> Update Rule';
   document.getElementById('fromEmail').value = fromEmail;
-  document.getElementById('toEmail').value = toEmail;
+  document.getElementById('toEmail').value = dest;
+  document.getElementById('ruleType').value = type;
+  document.getElementById('ruleType').dispatchEvent(new Event('change')); // Trigger UI update
   document.getElementById('ruleModal').classList.add('active');
 }
 
@@ -67,6 +71,7 @@ function closeRuleModal() {
 function clearRuleForm() {
   document.getElementById('ruleForm').reset();
   document.getElementById('priority').value = '5';
+  document.getElementById('ruleType').dispatchEvent(new Event('change'));
 }
 
 async function saveRule(event) {
@@ -74,13 +79,12 @@ async function saveRule(event) {
   const fromEmail = document.getElementById('fromEmail').value.trim();
   const toEmail = document.getElementById('toEmail').value.trim();
   const ruleType = document.getElementById('ruleType').value;
-  if (ruleType !== 'forward') { showNotification('Only Forward is supported for now', 'error'); return; }
   try {
     if (editingRuleId) {
-      await api('/api/rules/' + encodeURIComponent(editingRuleId), { method: 'PUT', body: JSON.stringify({ customEmail: fromEmail, destinationId: toEmail }) });
+      await api('/api/rules/' + encodeURIComponent(editingRuleId), { method: 'PUT', body: JSON.stringify({ customEmail: fromEmail, destinationId: toEmail, type: ruleType }) });
       showNotification('Rule updated successfully!', 'success');
     } else {
-      await api('/api/rules', { method: 'POST', body: JSON.stringify({ customEmail: fromEmail, destinationIdManual: toEmail }) });
+      await api('/api/rules', { method: 'POST', body: JSON.stringify({ customEmail: fromEmail, destinationIdManual: toEmail, type: ruleType }) });
       showNotification('Rule created successfully!', 'success');
     }
     closeRuleModal();
@@ -91,15 +95,24 @@ async function saveRule(event) {
 function createRuleElement(rule) {
   const alias = (rule.matchers && rule.matchers[0] && rule.matchers[0].value) || '';
   const action = rule.actions && rule.actions[0] || {};
-  const to = Array.isArray(action.value) ? action.value.join(', ') : (action.value || (action.type === 'drop' ? '/dev/null' : ''));
+  const type = action.type || 'forward';
+  const val = Array.isArray(action.value) ? action.value[0] : (action.value || '');
+  
+  let toDisplay = '';
+  if (type === 'drop') toDisplay = 'Drop (Delete)';
+  else if (type === 'worker') toDisplay = `Worker: ${val}`;
+  else toDisplay = `→ ${val}`;
+
   const isActive = !!rule.enabled;
   const div = document.createElement('div');
   div.className = 'email-rule';
   div.setAttribute('data-id', rule.id);
+  div.setAttribute('data-type', type);
+  div.setAttribute('data-value', val);
   div.innerHTML = `
     <div class="rule-info">
       <div class="rule-from">${alias}</div>
-      <div class="rule-to">→ ${to}</div>
+      <div class="rule-to">${toDisplay}</div>
     </div>
     <div class="rule-actions">
       <div class="rule-status ${isActive ? 'active' : 'inactive'}">${isActive ? 'Active' : 'Inactive'}</div>
@@ -224,6 +237,159 @@ function updateApiStatus(overallStatus = 'success', data = null) {
   }
 }
 
+// Inbox Management
+let inboxPage = 0;
+const inboxLimit = 20;
+let currentEmailData = null;
+
+async function loadInbox(page = 0) {
+  const list = document.getElementById('inbox-list');
+  list.innerHTML = '<div style="text-align: center; padding: 20px;">Loading...</div>';
+  
+  try {
+    const emails = await api(`/api/inbox?limit=${inboxLimit}&offset=${page * inboxLimit}`);
+    renderInbox(emails);
+    inboxPage = page;
+    
+    document.getElementById('btn-inbox-prev').disabled = inboxPage === 0;
+    document.getElementById('btn-inbox-next').disabled = emails.length < inboxLimit;
+  } catch (e) {
+    let msg = e.message;
+    if (msg.includes('Cannot GET')) {
+      msg = 'Server endpoint not found. Please restart your server.';
+    } else if (msg.includes('Invalid uuid') || msg.includes('databaseId')) {
+      msg = 'Invalid D1 Database ID. Please configure it in Settings.';
+    } else if (msg.includes('no such table')) {
+      list.innerHTML = `
+        <div style="text-align: center; padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 16px;">
+          <div style="color: var(--text-secondary-light);">Database table not found.</div>
+          <button class="btn" id="btn-init-db">Initialize Database</button>
+        </div>`;
+      document.getElementById('btn-init-db').onclick = initInboxDb;
+      return;
+    }
+    list.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--error);">Failed to load inbox: ${msg}</div>`;
+  }
+}
+
+async function initInboxDb() {
+  const btn = document.getElementById('btn-init-db');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="material-icons" style="font-size: 16px; animation: spin 1s linear infinite;">refresh</span> Initializing...';
+  }
+  
+  try {
+    await api('/api/inbox/init', { method: 'POST' });
+    showNotification('Database initialized successfully!', 'success');
+    loadInbox(0);
+  } catch (e) {
+    showNotification('Init failed: ' + e.message, 'error');
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = 'Initialize Database';
+    }
+  }
+}
+
+function renderInbox(emails) {
+  const list = document.getElementById('inbox-list');
+  list.innerHTML = '';
+  
+  if (!emails || emails.length === 0) {
+    list.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-secondary-light);">No messages found</div>';
+    return;
+  }
+  
+  emails.forEach(email => {
+    const el = document.createElement('div');
+    el.className = 'email-item';
+    const initial = (email.sender || '?')[0];
+    const date = new Date(email.created_at).toLocaleString();
+    
+    el.innerHTML = `
+      <div class="email-avatar">${initial}</div>
+      <div class="email-info">
+        <div class="email-sender">${email.sender}</div>
+        <div class="email-subject">${email.subject}</div>
+      </div>
+      <div class="email-date">${date}</div>
+    `;
+    el.addEventListener('click', () => openEmail(email.id));
+    list.appendChild(el);
+  });
+}
+
+async function openEmail(id) {
+  const modal = document.getElementById('emailModal');
+  const container = document.getElementById('emailBodyContainer');
+  
+  // Reset UI
+  container.innerHTML = '<div style="padding: 20px; text-align: center;">Loading content...</div>';
+  document.getElementById('emailSubject').textContent = 'Loading...';
+  document.getElementById('emailSender').textContent = '';
+  document.getElementById('emailDate').textContent = '';
+  document.getElementById('emailRecipient').textContent = '';
+  modal.classList.add('active');
+  
+  try {
+    const email = await api(`/api/inbox/${id}`);
+    currentEmailData = email;
+    
+    document.getElementById('emailSubject').textContent = email.subject;
+    document.getElementById('emailSender').textContent = `From: ${email.sender}`;
+    document.getElementById('emailRecipient').textContent = `To: ${email.recipient}`;
+    document.getElementById('emailDate').textContent = new Date(email.created_at).toLocaleString();
+    
+    // Default to HTML view
+    renderEmailBody('html');
+    
+    // Setup delete button
+    const deleteBtn = document.getElementById('btn-email-delete');
+    deleteBtn.onclick = () => deleteEmail(id);
+    
+  } catch (e) {
+    container.innerHTML = `<div style="padding: 20px; color: var(--error);">Error loading email: ${e.message}</div>`;
+  }
+}
+
+function renderEmailBody(type) {
+  const container = document.getElementById('emailBodyContainer');
+  const btnHtml = document.getElementById('btn-view-html');
+  const btnText = document.getElementById('btn-view-text');
+  
+  if (type === 'html') {
+    btnHtml.classList.add('active');
+    btnText.classList.remove('active');
+    const iframe = document.createElement('iframe');
+    iframe.className = 'email-body-iframe';
+    // Use srcdoc for security and isolation
+    iframe.srcdoc = currentEmailData.html_body || '<div style="font-family: sans-serif; padding: 20px; color: #666;">No HTML content</div>';
+    container.innerHTML = '';
+    container.appendChild(iframe);
+  } else {
+    btnHtml.classList.remove('active');
+    btnText.classList.add('active');
+    const div = document.createElement('div');
+    div.className = 'email-body-text';
+    div.textContent = currentEmailData.text_body || '(No text content)';
+    container.innerHTML = '';
+    container.appendChild(div);
+  }
+}
+
+async function deleteEmail(id) {
+  if (!confirm('Are you sure you want to delete this email?')) return;
+  try {
+    await api(`/api/inbox/${id}`, { method: 'DELETE' });
+    document.getElementById('emailModal').classList.remove('active');
+    loadInbox(inboxPage);
+    showNotification('Email deleted', 'success');
+  } catch (e) {
+    showNotification('Failed to delete: ' + e.message, 'error');
+  }
+}
+
 // Settings Management
 async function openSettings() {
   const modal = document.getElementById('settingsModal');
@@ -334,6 +500,19 @@ document.addEventListener('DOMContentLoaded', function () {
   if (addRuleBtn) addRuleBtn.addEventListener('click', showAddRuleDialog);
   if (addFabBtn) addFabBtn.addEventListener('click', showAddRuleDialog);
 
+  // Inbox events
+  const inboxTab = document.querySelector('[data-target="view-inbox"]');
+  if (inboxTab) inboxTab.addEventListener('click', () => loadInbox(0));
+  
+  document.getElementById('btn-refresh-inbox')?.addEventListener('click', () => loadInbox(inboxPage));
+  document.getElementById('btn-inbox-prev')?.addEventListener('click', () => loadInbox(inboxPage - 1));
+  document.getElementById('btn-inbox-next')?.addEventListener('click', () => loadInbox(inboxPage + 1));
+  
+  document.getElementById('btn-email-close')?.addEventListener('click', () => document.getElementById('emailModal').classList.remove('active'));
+  document.getElementById('btn-email-close-action')?.addEventListener('click', () => document.getElementById('emailModal').classList.remove('active'));
+  document.getElementById('btn-view-html')?.addEventListener('click', () => renderEmailBody('html'));
+  document.getElementById('btn-view-text')?.addEventListener('click', () => renderEmailBody('text'));
+
   // Close modal buttons
   const closeBtn = document.getElementById('btn-modal-close');
   const cancelBtn = document.getElementById('btn-cancel');
@@ -343,6 +522,37 @@ document.addEventListener('DOMContentLoaded', function () {
   // Form submit
   const ruleForm = document.getElementById('ruleForm');
   if (ruleForm) ruleForm.addEventListener('submit', saveRule);
+
+  // Rule Type change handler
+  const ruleTypeSelect = document.getElementById('ruleType');
+  if (ruleTypeSelect) {
+    ruleTypeSelect.addEventListener('change', function() {
+      const type = this.value;
+      const destInput = document.getElementById('toEmail');
+      const destGroup = destInput.closest('.form-group');
+      const destLabel = destGroup.querySelector('.form-label');
+      
+      if (type === 'drop') {
+        destGroup.style.display = 'none';
+        destInput.required = false;
+      } else {
+        destGroup.style.display = 'block';
+        destInput.required = true;
+        if (type === 'worker') {
+          destLabel.textContent = 'Worker Name';
+          destInput.placeholder = 'e.g., inbox-worker';
+          destInput.type = 'text';
+          if (!destInput.value || destInput.value.includes('@')) {
+            destInput.value = 'inbox-worker';
+          }
+        } else {
+          destLabel.textContent = 'Forward To';
+          destInput.placeholder = 'e.g., admin@company.com';
+          destInput.type = 'email';
+        }
+      }
+    });
+  }
 
   // Delegate rule actions
   const rulesContainer = document.getElementById('rules-container');

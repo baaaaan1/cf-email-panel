@@ -1,0 +1,8 @@
+name = "inbox-worker"
+main = "src/index.js"
+compatibility_date = "2023-10-30"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "email-db"
+database_id = "d6d86959-d2ee-4050-8f0d-655a2c115254"

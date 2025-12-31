@@ -35,6 +35,7 @@
   <!-- Navigation Tabs -->
   <div class="nav-tabs">
    <button class="nav-tab active" data-target="view-dashboard"><span class="material-icons">dashboard</span> Dashboard</button>
+   <button class="nav-tab" data-target="view-inbox"><span class="material-icons">inbox</span> Inbox</button>
   </div>
 
   <!-- Dashboard View -->
@@ -105,6 +106,22 @@
    </div>
   </div>
   </div>
+  
+  <!-- Inbox View -->
+  <div id="view-inbox" class="view-section" style="display: none;">
+   <div class="panel">
+    <div class="panel-header">
+     <h2 class="panel-title">Inbox</h2>
+     <button class="btn btn-secondary" id="btn-refresh-inbox"> <span class="material-icons">refresh</span> Refresh </button>
+    </div>
+    <div class="panel-content">
+     <div id="inbox-list" class="inbox-list">
+      <div style="text-align: center; padding: 20px; color: var(--text-secondary-light);">Loading...</div>
+     </div>
+     <div class="pagination-controls" style="margin-top: 20px; display: flex; justify-content: center; gap: 10px;"> <button class="btn btn-secondary" id="btn-inbox-prev" disabled>Previous</button> <button class="btn btn-secondary" id="btn-inbox-next" disabled>Next</button> </div>
+    </div>
+   </div>
+  </div>
 
   </main>
   </div>
@@ -135,6 +152,23 @@
   </div>
   <div class="modal-actions"><button type="button" class="btn btn-cancel" id="btn-cancel">Cancel</button> <button type="submit" form="ruleForm" class="btn" id="saveBtn"> <span class="material-icons">save</span> Save Rule </button>
   </div>
+   </div>
+  </div>
+  <!-- Read Email Modal -->
+  <div class="modal-overlay" id="emailModal">
+   <div class="modal" style="max-width: 800px; width: 95%;">
+    <div class="modal-header">
+     <h2 class="modal-title" id="emailSubject">Subject</h2><button class="modal-close" id="btn-email-close"> <span class="material-icons">close</span> </button>
+    </div>
+    <div class="modal-body">
+     <div class="email-meta">
+      <div class="email-meta-row"> <strong id="emailSender">From: ...</strong> <span id="emailDate">Date</span> </div>
+      <div class="email-meta-row" style="margin-top: 4px; font-size: 13px; color: var(--text-secondary-light);"> <span id="emailRecipient">To: ...</span> </div>
+     </div>
+     <div class="email-content-tabs"> <button class="btn btn-secondary active" id="btn-view-html" style="padding: 4px 12px; font-size: 12px;">HTML</button> <button class="btn btn-secondary" id="btn-view-text" style="padding: 4px 12px; font-size: 12px;">Text</button> </div>
+     <div id="emailBodyContainer" class="email-body-container"></div>
+    </div>
+    <div class="modal-actions" style="justify-content: space-between;"> <button type="button" class="btn" id="btn-email-delete" style="background-color: var(--error);"> <span class="material-icons">delete</span> Delete </button> <button type="button" class="btn btn-cancel" id="btn-email-close-action">Close</button> </div>
    </div>
   </div>
   <!-- Settings Modal -->
